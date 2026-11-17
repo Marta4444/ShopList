@@ -311,11 +311,12 @@ function finishSheet() {
   $('#sheet .panel').style.setProperty('--c', l.color);
   pendingPhoto = null; drawFinishPhoto();
 }
+const photoBtns = t => `<div class="actions"><button class="btn ghost small" data-act="pickphoto" data-t="${t}" data-src="cam">Hacer foto</button><button class="btn ghost small" data-act="pickphoto" data-t="${t}" data-src="gal">Elegir de la galería</button></div>`;
 function drawFinishPhoto() {
   const box = $('#p-photo'); if (!box) return;
   box.innerHTML = pendingPhoto
-    ? `<img class="thumb" src="${pendingPhoto}" alt="Foto del ticket"><div class="actions"><button class="btn ghost small" data-act="pickphoto" data-t="finish">Cambiar foto</button><button class="btn danger small" data-act="rmphoto">Quitar foto</button></div>`
-    : `<div class="stack"><button class="btn ghost" data-act="pickphoto" data-t="finish">Añadir foto</button></div>`;
+    ? `<img class="thumb" src="${pendingPhoto}" alt="Foto del ticket">${photoBtns('finish')}<div class="stack"><button class="btn danger small" data-act="rmphoto">Quitar foto</button></div>`
+    : photoBtns('finish');
 }
 function finishShop() {
   const l = state.lists[curList], date = $('#p-date').value || today(), price = parsePrice($('#p-price').value);
@@ -345,16 +346,16 @@ function purchaseSheet(id) {
 async function drawPurchasePhoto() {
   const box = $('#e-photo'), id = pcur, p = state.purchases[id];
   if (!box || !p) return;
-  if (!p.photo) { box.innerHTML = '<div class="stack"><button class="btn ghost" data-act="pickphoto" data-t="purchase">Añadir foto del ticket</button></div>'; return; }
+  if (!p.photo) { box.innerHTML = photoBtns('purchase'); return; }
   box.innerHTML = '<p class="hint">Cargando foto…</p>';
   let data = null;
   try { data = await loadPhoto(id); } catch (e) { console.error(e); }
   if (pcur !== id || !$('#e-photo')) return;
   $('#e-photo').innerHTML = data
     ? `<button class="photobtn" data-act="viewphoto" aria-label="Ver el ticket en grande"><img class="thumb" src="${data}" alt="Foto del ticket"></button>
-       <div class="actions"><button class="btn ghost small" data-act="pickphoto" data-t="purchase">Cambiar foto</button><button class="btn danger small" data-act="delphoto">Quitar foto</button></div>`
+       ${photoBtns('purchase')}<div class="stack"><button class="btn danger small" data-act="delphoto">Quitar foto</button></div>`
     : `<p class="hint">No se pudo cargar la foto. Si estás sin conexión, prueba cuando la recuperes.</p>
-       <div class="stack"><button class="btn ghost" data-act="pickphoto" data-t="purchase">Subir otra foto</button></div>`;
+       ${photoBtns('purchase')}`;
 }
 function readd() {
   const p = state.purchases[pcur], l = p && state.lists[p.listId];
@@ -574,7 +575,7 @@ document.addEventListener('click', async ev => {
         `<button class="btn danger" data-act="delpurchaseok">Borrar compra</button><button class="btn ghost" data-act="closesheet">Cancelar</button>`);
       break;
     case 'delpurchaseok': if (state.purchases[pcur] && state.purchases[pcur].photo) dropPhoto(pcur).catch(() => {}); removePurchase(pcur); closeSheet(); render(); toast('Compra borrada'); break;
-    case 'pickphoto': photoTarget = ds.t; $('#photofile').click(); break;
+    case 'pickphoto': photoTarget = ds.t; $(ds.src === 'cam' ? '#photocam' : '#photofile').click(); break;
     case 'rmphoto': pendingPhoto = null; drawFinishPhoto(); break;
     case 'delphoto': {
       const p = state.purchases[pcur];
@@ -617,7 +618,7 @@ document.addEventListener('keydown', ev => {
 document.addEventListener('change', ev => {
   const el = ev.target;
   if (el.id === 'importfile' && el.files[0]) { importData(el.files[0]); el.value = ''; }
-  else if (el.id === 'photofile' && el.files[0]) { const f = el.files[0]; el.value = ''; onPhoto(f); }
+  else if ((el.id === 'photofile' || el.id === 'photocam') && el.files[0]) { const f = el.files[0]; el.value = ''; onPhoto(f); }
 });
 
 /* =====================  arranque  ===================== */
