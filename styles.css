@@ -155,4 +155,9 @@ input[type=text],input[type=date],input:not([type]){display:block;width:100%;mar
 #toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #toast button{border:0;background:none;color:#F2B84B;font-weight:800;padding:0}
 
+/* ---------- foto del ticket ---------- */
+.thumb{display:block;width:100%;max-height:200px;object-fit:cover;object-position:top;border-radius:16px;margin-top:8px;background:#fff}
+.photobtn{display:block;width:100%;border:0;background:none;padding:0}
+.full{display:block;width:100%;height:auto;border-radius:14px;background:#fff}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

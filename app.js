@@ -81,7 +81,7 @@ function addItems(listId, text) {
 }
 
 /* =====================  estado de la interfaz  ===================== */
-let view = 'home', curList = null, hist = { cursor: today().slice(0, 7), day: null }, lform = null, undoFn = null, pcur = null;
+let view = 'home', curList = null, hist = { cursor: today().slice(0, 7), day: null }, lform = null, undoFn = null, pcur = null, pendingPhoto = null, photoTarget = null;
 const IC = {
   chk: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
@@ -195,7 +195,7 @@ function vHistory() {
   const shown = hist.day ? month.filter(p => p.date === hist.day) : month;
   const cards = shown.map(p => `<button class="pcard" style="--c:${p.color}" data-act="openpurchase" data-id="${p.id}">
       <span></span>
-      <span><span class="nm">${esc(p.listName)}</span><br><span class="ds">${fmt(p.date, { weekday: 'short', day: 'numeric', month: 'short' })}, ${plural(p.items.length, 'producto', 'productos')}</span></span>
+      <span><span class="nm">${esc(p.listName)}</span><br><span class="ds">${fmt(p.date, { weekday: 'short', day: 'numeric', month: 'short' })}, ${plural(p.items.length, 'producto', 'productos')}${p.photo ? ', con ticket' : ''}</span></span>
       <span class="pr">${p.price != null ? eur(p.price) : '<small>Sin precio</small>'}</span></button>`).join('');
   return `<div class="wrap">
     <div class="mhead"><h1>${fmt(`${hist.cursor}-01`, { month: 'long', year: 'numeric' })}</h1>
@@ -230,7 +230,7 @@ function vSettings() {
 
 /* =====================  hojas y avisos  ===================== */
 function sheet(html) { $('#sheet').innerHTML = `<div class="scrim" data-act="closesheet"></div><div class="panel" role="dialog" aria-modal="true">${html}</div>`; $('#sheet').hidden = false; }
-function closeSheet() { $('#sheet').hidden = true; $('#sheet').innerHTML = ''; lform = null; pcur = null; }
+function closeSheet() { $('#sheet').hidden = true; $('#sheet').innerHTML = ''; lform = null; pcur = null; pendingPhoto = null; }
 let tt;
 function toast(msg, undo) {
   const el = $('#toast');
@@ -306,13 +306,23 @@ function finishSheet() {
     <p>${plural(got, 'producto cogido', 'productos cogidos')}.${left ? ` ${left === 1 ? 'El otro se queda' : `Los otros ${left} se quedan`} en la lista para la próxima.` : ''}</p>
     <label>Fecha<input type="date" id="p-date" value="${today()}"></label>
     <label>Precio total <small>(opcional)</small><input type="text" inputmode="decimal" id="p-price" placeholder="0,00 €" autocomplete="off"></label>
+    <div class="field"><span>Foto del ticket <small>(opcional)</small></span><div id="p-photo"></div></div>
     <div class="actions"><button class="btn accent" data-act="finishgo">Guardar compra</button><button class="btn ghost" data-act="closesheet">Cancelar</button></div>`);
   $('#sheet .panel').style.setProperty('--c', l.color);
+  pendingPhoto = null; drawFinishPhoto();
+}
+function drawFinishPhoto() {
+  const box = $('#p-photo'); if (!box) return;
+  box.innerHTML = pendingPhoto
+    ? `<img class="thumb" src="${pendingPhoto}" alt="Foto del ticket"><div class="actions"><button class="btn ghost small" data-act="pickphoto" data-t="finish">Cambiar foto</button><button class="btn danger small" data-act="rmphoto">Quitar foto</button></div>`
+    : `<div class="stack"><button class="btn ghost" data-act="pickphoto" data-t="finish">Añadir foto</button></div>`;
 }
 function finishShop() {
   const l = state.lists[curList], date = $('#p-date').value || today(), price = parsePrice($('#p-price').value);
   const got = itemsOf(l.id).filter(i => i.got);
-  putPurchase({ id: uid('p'), listId: l.id, listName: l.name, color: l.color, date, price, items: got.map(i => ({ name: i.name, qty: i.qty })), created: Date.now() });
+  const pid = uid('p');
+  putPurchase({ id: pid, listId: l.id, listName: l.name, color: l.color, date, price, photo: !!pendingPhoto, items: got.map(i => ({ name: i.name, qty: i.qty })), created: Date.now() });
+  if (pendingPhoto) savePhoto(pid, pendingPhoto).catch(console.error);
   got.forEach(i => removeItem(i.id));
   putList({ ...l, shopping: false });
   closeSheet(); view = 'home'; curList = null; render(); window.scrollTo(0, 0);
@@ -327,8 +337,24 @@ function purchaseSheet(id) {
     <ul class="plist">${p.items.map(i => `<li><span>${esc(i.name)}</span><b>${esc(qtyLabel(i.qty))}</b></li>`).join('')}</ul>
     <label>Fecha<input type="date" id="e-date" value="${p.date}"></label>
     <label>Precio total <small>(opcional)</small><input type="text" inputmode="decimal" id="e-price" value="${p.price != null ? String(p.price).replace('.', ',') : ''}" placeholder="0,00 €" autocomplete="off"></label>
+    <div class="field"><span>Foto del ticket</span><div id="e-photo"></div></div>
     <div class="actions"><button class="btn accent" data-act="savepurchase">Guardar cambios</button><button class="btn ghost" data-act="closesheet">Cerrar</button></div>
     <div class="stack"><button class="btn ghost" data-act="readd">Volver a añadir a la lista</button><button class="btn danger" data-act="delpurchase">Borrar compra</button></div></div>`);
+  drawPurchasePhoto();
+}
+async function drawPurchasePhoto() {
+  const box = $('#e-photo'), id = pcur, p = state.purchases[id];
+  if (!box || !p) return;
+  if (!p.photo) { box.innerHTML = '<div class="stack"><button class="btn ghost" data-act="pickphoto" data-t="purchase">Añadir foto del ticket</button></div>'; return; }
+  box.innerHTML = '<p class="hint">Cargando foto…</p>';
+  let data = null;
+  try { data = await loadPhoto(id); } catch (e) { console.error(e); }
+  if (pcur !== id || !$('#e-photo')) return;
+  $('#e-photo').innerHTML = data
+    ? `<button class="photobtn" data-act="viewphoto" aria-label="Ver el ticket en grande"><img class="thumb" src="${data}" alt="Foto del ticket"></button>
+       <div class="actions"><button class="btn ghost small" data-act="pickphoto" data-t="purchase">Cambiar foto</button><button class="btn danger small" data-act="delphoto">Quitar foto</button></div>`
+    : `<p class="hint">No se pudo cargar la foto. Si estás sin conexión, prueba cuando la recuperes.</p>
+       <div class="stack"><button class="btn ghost" data-act="pickphoto" data-t="purchase">Subir otra foto</button></div>`;
 }
 function readd() {
   const p = state.purchases[pcur], l = p && state.lists[p.listId];
@@ -365,7 +391,8 @@ async function connect(code, mode) {
   if (mode === 'join') { const s = await fs.getDoc(ref); if (!s.exists()) throw new Error('notfound'); }
   if (mode === 'create') fs.setDoc(ref, { ...state, created: Date.now() }).catch(console.error);
   if (cloud && cloud.unsub) cloud.unsub();
-  cloud = { fs, ref, synced: false };
+  cloud = { fs, db, code, ref, synced: false };
+  if (mode === 'create') uploadLocalPhotos();
   cloud.unsub = fs.onSnapshot(ref, snap => {
     if (!snap.exists()) return;
     state = norm(snap.data());
@@ -387,6 +414,83 @@ async function startShare(mode, code) {
     toast(e.message === 'notfound' ? 'No existe ese código' : 'No se pudo conectar. Revisa la conexión y la configuración de Firebase.');
   }
   render();
+}
+
+/* =====================  fotos del ticket  ===================== */
+/* Las fotos viven en el móvil (IndexedDB). Si hay sincronización, cada foto se guarda
+   además en su propio documento de Firestore (las listas no se hacen pesadas). */
+let idbp = null;
+function idb() {
+  if (!idbp) idbp = new Promise((res, rej) => {
+    const r = indexedDB.open('compra-fotos', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('f');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  return idbp;
+}
+async function idbOp(mode, fn) {
+  const db = await idb();
+  return new Promise((res, rej) => { const q = fn(db.transaction('f', mode).objectStore('f')); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); });
+}
+const photoRef = pid => cloud.fs.doc(cloud.db, 'shared', docId(cloud.code) + '_f_' + pid);
+async function savePhoto(pid, data) {
+  await idbOp('readwrite', s => s.put(data, pid));
+  if (cloud) cloud.fs.setDoc(photoRef(pid), { data, created: Date.now() }).catch(console.error);
+}
+async function loadPhoto(pid) {
+  let d = await idbOp('readonly', s => s.get(pid));
+  if (d) return d;
+  if (cloud) {
+    const snap = await cloud.fs.getDoc(photoRef(pid));
+    if (snap.exists() && snap.data().data) { d = snap.data().data; await idbOp('readwrite', s => s.put(d, pid)); return d; }
+  }
+  return null;
+}
+async function dropPhoto(pid) {
+  await idbOp('readwrite', s => s.delete(pid));
+  if (cloud) cloud.fs.updateDoc(photoRef(pid), { data: '' }).catch(() => {});
+}
+async function uploadLocalPhotos() {
+  for (const p of Object.values(state.purchases)) {
+    if (!p.photo) continue;
+    try { const d = await idbOp('readonly', s => s.get(p.id)); if (d && cloud) cloud.fs.setDoc(photoRef(p.id), { data: d, created: Date.now() }).catch(console.error); } catch (e) {}
+  }
+}
+/* reduce la foto para que pese poco (cabe de sobra en un documento de Firestore) */
+async function compress(file) {
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch (e) { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); }); }
+  const w0 = bmp.width || bmp.naturalWidth, h0 = bmp.height || bmp.naturalHeight;
+  let max = 1600, q = 0.72, out = '';
+  for (let i = 0; i < 6; i++) {
+    const k = Math.min(1, max / Math.max(w0, h0)), c = document.createElement('canvas');
+    c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    out = c.toDataURL('image/jpeg', q);
+    if (out.length < 800000) return out;
+    max *= 0.8; q = Math.max(0.4, q - 0.08);
+  }
+  if (out.length > 950000) throw new Error('toobig');
+  return out;
+}
+async function onPhoto(file) {
+  try {
+    toast('Preparando la foto…');
+    const data = await compress(file);
+    if (photoTarget === 'finish') { pendingPhoto = data; drawFinishPhoto(); }
+    else if (photoTarget === 'purchase' && pcur && state.purchases[pcur]) {
+      const id = pcur;
+      await savePhoto(id, data);
+      putPurchase({ ...state.purchases[id], photo: true });
+      drawPurchasePhoto(); render();
+    }
+    toast('Foto añadida');
+  } catch (e) {
+    console.error(e);
+    toast(e.message === 'toobig' ? 'La foto es demasiado grande' : 'No se pudo usar esa foto');
+  }
 }
 
 /* =====================  copia de seguridad  ===================== */
@@ -469,7 +573,21 @@ document.addEventListener('click', async ev => {
       confirmSheet('¿Borrar esta compra?', 'Desaparece del historial.',
         `<button class="btn danger" data-act="delpurchaseok">Borrar compra</button><button class="btn ghost" data-act="closesheet">Cancelar</button>`);
       break;
-    case 'delpurchaseok': removePurchase(pcur); closeSheet(); render(); toast('Compra borrada'); break;
+    case 'delpurchaseok': if (state.purchases[pcur] && state.purchases[pcur].photo) dropPhoto(pcur).catch(() => {}); removePurchase(pcur); closeSheet(); render(); toast('Compra borrada'); break;
+    case 'pickphoto': photoTarget = ds.t; $('#photofile').click(); break;
+    case 'rmphoto': pendingPhoto = null; drawFinishPhoto(); break;
+    case 'delphoto': {
+      const p = state.purchases[pcur];
+      if (p) { dropPhoto(pcur).catch(() => {}); putPurchase({ ...p, photo: false }); drawPurchasePhoto(); render(); toast('Foto quitada'); }
+      break;
+    }
+    case 'viewphoto': {
+      const id = pcur; let d = null;
+      try { d = await loadPhoto(id); } catch (e) {}
+      if (d) sheet(`<img class="full" src="${d}" alt="Ticket"><div class="stack"><button class="btn ghost" data-act="closephoto">Volver</button></div>`);
+      break;
+    }
+    case 'closephoto': purchaseSheet(pcur); break;
     case 'undo': if (undoFn) undoFn(); undoFn = null; $('#toast').classList.remove('show'); break;
     case 'closesheet': closeSheet(); break;
     case 'sharecreate': startShare('create', newCode()); break;
@@ -499,6 +617,7 @@ document.addEventListener('keydown', ev => {
 document.addEventListener('change', ev => {
   const el = ev.target;
   if (el.id === 'importfile' && el.files[0]) { importData(el.files[0]); el.value = ''; }
+  else if (el.id === 'photofile' && el.files[0]) { const f = el.files[0]; el.value = ''; onPhoto(f); }
 });
 
 /* =====================  arranque  ===================== */

@@ -1,4 +1,4 @@
-const CACHE = 'compra-v1';
+const CACHE = 'compra-v2';
 const SHELL = ['./', './index.html', './styles.css', './app.js', './config.js', './manifest.json',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
