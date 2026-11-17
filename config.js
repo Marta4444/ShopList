@@ -1,4 +1,8 @@
-// Copia aquí el MISMO contenido del config.js de tu otra app (la de medicación).
-// Usa el mismo proyecto de Firebase, no hace falta crear nada nuevo.
-// Mientras esté en null, la app funciona igual pero solo en un móvil.
-window.FIREBASE_CONFIG = null;
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA9b6QPXHyoQ5eUGlesMPbPJJIHQf_BRDk",
+  authDomain: "tracker-medicacion.firebaseapp.com",
+  projectId: "tracker-medicacion",
+  storageBucket: "tracker-medicacion.firebasestorage.app",
+  messagingSenderId: "84602448062",
+  appId: "1:84602448062:web:64e71cc0c8c129ec1dd6ef"
+};
